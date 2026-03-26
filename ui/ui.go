@@ -1,381 +1,449 @@
 package ui
 
 import (
-	"errors"
 	"fmt"
 	"log"
-	"strings"
 	"os/exec"
 	"sort"
-	"sync/atomic"
-	"time"
+	"strings"
 
-	"github.com/jroimartin/gocui"
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/mipmip/dirtygit/scanner"
 )
 
 const (
-	vRepo     = "repo"
-	vStatus   = "status"
-	vScanning = "scanning"
-	vError    = "error"
-	vLog      = "log"
+	viewRepo   = 0
+	viewStatus = 1
+	viewLog    = 2
 )
 
-type ui struct {
-	scan         chan struct{}
-	config       *scanner.Config
-	repositories scanner.MultiGitStatus
-	ignore_dir_errors bool
+// Message types
 
-	scanning     uint32
-	scanProgress int
+type scanMsg struct {
+	repositories scanner.MultiGitStatus
 	err          error
 }
 
-func Run(config *scanner.Config, ignore_dir_errors bool) error {
-	g, err := gocui.NewGui(gocui.OutputNormal)
-	if err != nil {
-		return err
-	}
-	defer g.Close()
+type logMsg string
 
-	g.Cursor = true
-	// g.Mouse = true
-
-	u := &ui{}
-	u.config = config
-	u.ignore_dir_errors = ignore_dir_errors
-	u.scan = make(chan struct{}, 1)
-	go u.Run(g)
-
-	g.SetManager(u)
-
-	if err := u.initKeybindings(g); err != nil {
-		return err
-	}
-	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
-		return err
-	}
-
-	return nil
+// logWriter sends log output as tea messages to the program.
+type logWriter struct {
+	program *tea.Program
 }
 
-func min(x, y int) int {
-	if x < y {
-		return x
-	}
-	return y
+func (w logWriter) Write(p []byte) (n int, err error) {
+	w.program.Send(logMsg(string(p)))
+	return len(p), nil
 }
 
-func (u *ui) Layout(g *gocui.Gui) error {
-	maxX, maxY := g.Size()
-	if maxY < 20 {
-		return errors.New("Need bigger screen")
-	}
-	numRepositories := len(u.repositories)
-	divide := min(numRepositories+2, maxY/2)
+// Styles
 
-	repo, err := g.SetView(vRepo, 0, 0, maxX-1, divide)
-	if err == gocui.ErrUnknownView {
-		repo.Title = " Repositories "
-		repo.Highlight = true
-		repo.SelBgColor = gocui.ColorGreen
-		repo.SelFgColor = gocui.ColorBlack
-	} else if err != nil {
-		return err
+var (
+	titleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Padding(0, 1)
+
+	selectedStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("2")). // green
+			Foreground(lipgloss.Color("0")). // black
+			Width(0)                         // set dynamically
+
+	normalStyle = lipgloss.NewStyle()
+
+	activeBorderStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("2")) // green
+
+	inactiveBorderStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("240")) // gray
+
+	modalStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("1")). // red
+			Padding(1, 2).
+			Align(lipgloss.Center)
+)
+
+type model struct {
+	config            *scanner.Config
+	ignoreDirErrors   bool
+	repositories      scanner.MultiGitStatus
+	repoPaths         []string
+	cursor            int
+	activeView        int
+	scanning          bool
+	err               error
+	spinner           spinner.Model
+	statusViewport    viewport.Model
+	logViewport       viewport.Model
+	logContent        string
+	width             int
+	height            int
+	program           *tea.Program
+}
+
+func newModel(config *scanner.Config, ignoreDirErrors bool) model {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+
+	return model{
+		config:          config,
+		ignoreDirErrors: ignoreDirErrors,
+		scanning:        true,
+		spinner:         s,
+		statusViewport:  viewport.New(0, 0),
+		logViewport:     viewport.New(0, 0),
 	}
-	if g.CurrentView() == nil {
-		_, err = g.SetCurrentView(vRepo)
-		if err != nil {
-			return err
+}
+
+func (m model) Init() tea.Cmd {
+	return tea.Batch(
+		m.spinner.Tick,
+		m.doScan(),
+	)
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.recalcLayout()
+
+	case tea.KeyMsg:
+		if m.scanning {
+			// Only allow quit during scanning
+			switch msg.String() {
+			case "q", "ctrl+c":
+				return m, tea.Quit
+			}
+			return m, nil
 		}
-	}
 
-	status, err := g.SetView(vStatus, 0, divide+1, maxX-1, maxY-11)
-	if err != nil && err != gocui.ErrUnknownView {
-		return err
-	}
-	status.Title = " Status "
-
-	logwindow, err := g.SetView(vLog, 0, maxY-10, maxX-1, maxY-1)
-	if err == gocui.ErrUnknownView {
-		logwindow.Title = " Log "
-		logwindow.Autoscroll = true
-		logwindow.Wrap = true
-		log.SetOutput(logwindow)
-	} else if err != nil {
-		// if err != nil && err != gocui.ErrUnknownView {
-		return err
-	} else {
-		// _, y := logwindow.Size()
-		// logwindow.SetCursor(0, y-1)
-	}
-
-	if atomic.LoadUint32(&u.scanning) > 0 {
-		var scanning *gocui.View
-		scanning, err = g.SetView(vScanning, maxX/2-10, maxY/2-1, maxX/2+10, maxY/2+1)
-		scanning.Title = " Scanning "
-		if err != nil && err != gocui.ErrUnknownView {
-			return err
+		if m.err != nil {
+			// Any key dismisses error
+			m.err = nil
+			return m, nil
 		}
-		if err == gocui.ErrUnknownView {
-			u.scanProgress = 1
-			_, err = g.SetCurrentView(vScanning)
-			return err
-		}
-		u.updateScanProgress(g, scanning)
-	} else {
-		err = g.DeleteView(vScanning)
-		if err == nil {
-			_, err = g.SetCurrentView(vRepo)
-			if err != nil {
-				return err
+
+		switch msg.String() {
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		case "s":
+			m.scanning = true
+			cmds = append(cmds, m.doScan())
+		case "e":
+			cmd := m.doEdit()
+			if cmd != nil {
+				return m, cmd
+			}
+		case "tab":
+			m.activeView = (m.activeView + 1) % 3
+		case "up":
+			if m.activeView == viewRepo {
+				if m.cursor > 0 {
+					m.cursor--
+					m.updateStatusContent()
+				}
+			} else if m.activeView == viewStatus {
+				m.statusViewport.LineUp(1)
+			} else if m.activeView == viewLog {
+				m.logViewport.LineUp(1)
+			}
+		case "down":
+			if m.activeView == viewRepo {
+				if m.cursor < len(m.repoPaths)-1 {
+					m.cursor++
+					m.updateStatusContent()
+				}
+			} else if m.activeView == viewStatus {
+				m.statusViewport.LineDown(1)
+			} else if m.activeView == viewLog {
+				m.logViewport.LineDown(1)
 			}
 		}
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-	}
-	if u.err != nil {
-		var errorView *gocui.View
-		errorView, err = g.SetView(vError, maxX/8, maxY/2-2, 7*maxX/8, maxY/2+2)
-		errorView.Title = " Error "
-		errorView.Wrap = true
-		if err != nil && err != gocui.ErrUnknownView {
-			return err
-		}
-		if err == gocui.ErrUnknownView {
-			fmt.Fprint(errorView, u.err)
-			_, err = g.SetCurrentView(vError)
-			return err
-		}
-	} else {
-		err = g.DeleteView(vError)
-		if err == nil {
-			_, err = g.SetCurrentView(vRepo)
-			if err != nil {
-				return err
+
+	case scanMsg:
+		m.scanning = false
+		if msg.err != nil {
+			m.err = msg.err
+		} else {
+			m.repositories = msg.repositories
+			m.repoPaths = make([]string, 0, len(m.repositories))
+			for r := range m.repositories {
+				m.repoPaths = append(m.repoPaths, r)
 			}
+			sort.Strings(m.repoPaths)
+			if m.cursor >= len(m.repoPaths) {
+				m.cursor = max(0, len(m.repoPaths)-1)
+			}
+			m.recalcLayout()
+			m.updateStatusContent()
 		}
-		if err != gocui.ErrUnknownView {
-			return err
-		}
+
+	case logMsg:
+		m.logContent += string(msg)
+		m.logViewport.SetContent(m.logContent)
+		m.logViewport.GotoBottom()
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		cmds = append(cmds, cmd)
 	}
 
-	return nil
+	return m, tea.Batch(cmds...)
 }
 
-func (u *ui) updateScanProgress(g *gocui.Gui, v *gocui.View) {
-	x, y := v.Cursor()
-	err := v.SetCursor(x+u.scanProgress, y)
-	if err != nil {
-		u.scanProgress = -u.scanProgress
+func (m *model) recalcLayout() {
+	if m.width == 0 || m.height == 0 {
+		return
 	}
-}
+	// Account for borders (2 lines per panel)
+	innerWidth := m.width - 2
 
-func (u *ui) initKeybindings(g *gocui.Gui) error {
-	type keybinding struct {
-		viewname string
-		key      interface{}
-		mod      gocui.Modifier
-		handler  func(*gocui.Gui, *gocui.View) error
+	statusHeight := m.statusPanelHeight()
+	if statusHeight > 0 {
+		m.statusViewport.Width = innerWidth
+		m.statusViewport.Height = statusHeight
 	}
-	for _, k := range []keybinding{
-		{"", gocui.KeyCtrlC, gocui.ModNone, u.quit},
-		{"", 'q', gocui.ModNone, u.quit},
-		{vStatus, gocui.KeyTab, gocui.ModNone, u.nextView},
-		{vRepo, gocui.KeyTab, gocui.ModNone, u.nextView},
-		{vLog, gocui.KeyTab, gocui.ModNone, u.nextView},
-		{"", gocui.KeyArrowUp, gocui.ModNone, u.up},
-		{"", gocui.KeyArrowDown, gocui.ModNone, u.down},
-		{"", 's', gocui.ModNone, u.requestScan},
-		{"", 'e', gocui.ModNone, u.edit},
-	} {
-		if err := g.SetKeybinding(k.viewname, k.key, k.mod, k.handler); err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
-func (u *ui) nextView(g *gocui.Gui, v *gocui.View) error {
-	if v == nil {
-		_, err := g.SetCurrentView(vRepo)
-		return err
-	}
-	switch v.Name() {
-	case vRepo:
-		_, err := g.SetCurrentView(vStatus)
-		return err
-	case vStatus:
-		_, err := g.SetCurrentView(vLog)
-		return err
-	default:
-		_, err := g.SetCurrentView(vRepo)
-		return err
+	logHeight := m.logPanelHeight()
+	if logHeight > 0 {
+		m.logViewport.Width = innerWidth
+		m.logViewport.Height = logHeight
 	}
 }
 
-func (u *ui) openCommand(g *gocui.Gui, v *gocui.View) error {
-	return gocui.ErrQuit
-}
-
-func (u *ui) quit(g *gocui.Gui, v *gocui.View) error {
-	return gocui.ErrQuit
-}
-
-func (u *ui) up(g *gocui.Gui, v *gocui.View) error {
-	v.MoveCursor(0, -1, false)
-	if v.Name() == vRepo {
-		u.updateDiff(g)
+func (m model) repoPanelHeight() int {
+	n := len(m.repoPaths)
+	if n == 0 {
+		n = 1
 	}
-	return nil
+	maxH := (m.height - 6) / 2 // leave room for other panels + borders
+	if n > maxH {
+		return maxH
+	}
+	return n
 }
 
-func (u *ui) down(g *gocui.Gui, v *gocui.View) error {
-	v.MoveCursor(0, 1, false)
-	if v.Name() == vRepo {
-		u.updateDiff(g)
+func (m model) statusPanelHeight() int {
+	repoH := m.repoPanelHeight() + 2 // +border
+	logH := m.logPanelHeight() + 2    // +border
+	remaining := m.height - repoH - logH
+	if remaining < 3 {
+		return 3
 	}
-	return nil
+	return remaining - 2 // -border
 }
 
-func (u *ui) getCurrentRepo(g *gocui.Gui) string {
-	repo, err := g.View(vRepo)
-	if err != nil {
-		return ""
-	}
-
-	_, y := repo.Cursor()
-	currentRepo, err := repo.Line(y)
-	if err != nil {
-		return ""
-	}
-
-	return currentRepo
+func (m model) logPanelHeight() int {
+	return min(10, (m.height-6)/3)
 }
 
-func (u *ui) edit(g *gocui.Gui, v *gocui.View) error {
-	currentRepo := u.getCurrentRepo(g)
+func (m *model) updateStatusContent() {
+	if len(m.repoPaths) == 0 {
+		m.statusViewport.SetContent("")
+		return
+	}
+	currentRepo := m.repoPaths[m.cursor]
+	st, ok := m.repositories[currentRepo]
+	if !ok || len(st.Status) == 0 {
+		m.statusViewport.SetContent("")
+		return
+	}
+
+	var b strings.Builder
+	b.WriteString(" SW\n")
+	b.WriteString("-----\n")
+
+	paths := make([]string, 0, len(st.Status))
+	for path := range st.Status {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		status := st.Status[path]
+		b.WriteString(fmt.Sprintf(" %c%c  %s\n", status.Staging, status.Worktree, path))
+	}
+	m.statusViewport.SetContent(b.String())
+	m.statusViewport.GotoTop()
+}
+
+func (m model) doScan() tea.Cmd {
+	config := m.config
+	ignoreDirErrors := m.ignoreDirErrors
+	return func() tea.Msg {
+		repos, err := scanner.Scan(config, ignoreDirErrors)
+		return scanMsg{repositories: repos, err: err}
+	}
+}
+
+func (m model) doEdit() tea.Cmd {
+	if len(m.repoPaths) == 0 || m.cursor >= len(m.repoPaths) {
+		return nil
+	}
+	currentRepo := m.repoPaths[m.cursor]
 	if currentRepo == "" {
 		return nil
 	}
 
-	//fmt.Sprintln(u.config.EditCommand)
-
-	//cmd := exec.Command("code", currentRepo)
-	//cmdStr := u.config.EditCommand
-	cmdStr := strings.Replace(u.config.EditCommand, "%WORKING_DIRECTORY", currentRepo, -1)
+	cmdStr := strings.Replace(m.config.EditCommand, "%WORKING_DIRECTORY", currentRepo, -1)
 	args := strings.Fields(cmdStr)
-	//fmt.Println(cmdStr)
-	cmd := exec.Command(args[0], args[1:]...)
-	err := cmd.Run()
+	if len(args) == 0 {
+		return nil
+	}
+
+	c := exec.Command(args[0], args[1:]...)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return nil
+	})
+}
+
+func (m model) View() string {
+	if m.width == 0 || m.height == 0 {
+		return "Initializing..."
+	}
+	if m.height < 20 {
+		return "Terminal too small. Need at least 20 lines."
+	}
+
+	innerWidth := m.width - 2
+
+	// Repo panel
+	repoContent := m.renderRepoList(innerWidth)
+	repoPanel := m.renderPanel(viewRepo, innerWidth, m.repoPanelHeight(), repoContent)
+
+	// Status panel
+	statusPanel := m.renderPanel(viewStatus, innerWidth, m.statusPanelHeight(), m.statusViewport.View())
+
+	// Log panel
+	logPanel := m.renderPanel(viewLog, innerWidth, m.logPanelHeight(), m.logViewport.View())
+
+	view := lipgloss.JoinVertical(lipgloss.Left, repoPanel, statusPanel, logPanel)
+
+	// Modal overlays
+	if m.scanning {
+		modal := modalStyle.Width(20).Render(m.spinner.View() + " Scanning...")
+		view = placeOverlay(m.width, m.height, modal, view)
+	}
+	if m.err != nil {
+		errText := fmt.Sprintf("Error: %v", m.err)
+		modal := modalStyle.Width(m.width * 3 / 4).Render(errText)
+		view = placeOverlay(m.width, m.height, modal, view)
+	}
+
+	return view
+}
+
+func (m model) renderRepoList(width int) string {
+	if len(m.repoPaths) == 0 {
+		return "No dirty repositories found."
+	}
+
+	var b strings.Builder
+	h := m.repoPanelHeight()
+	// Calculate scroll offset
+	offset := 0
+	if m.cursor >= h {
+		offset = m.cursor - h + 1
+	}
+
+	end := offset + h
+	if end > len(m.repoPaths) {
+		end = len(m.repoPaths)
+	}
+
+	for i := offset; i < end; i++ {
+		if i > offset {
+			b.WriteString("\n")
+		}
+		line := m.repoPaths[i]
+		if i == m.cursor {
+			styled := selectedStyle.Width(width).Render(line)
+			b.WriteString(styled)
+		} else {
+			b.WriteString(normalStyle.Render(line))
+		}
+	}
+	return b.String()
+}
+
+func (m model) renderPanel(view int, width int, height int, content string) string {
+	var title string
+	switch view {
+	case viewRepo:
+		title = " Repositories "
+	case viewStatus:
+		title = " Status "
+	case viewLog:
+		title = " Log "
+	}
+
+	borderColor := lipgloss.Color("240")
+	if m.activeView == view {
+		borderColor = lipgloss.Color("2")
+	}
+
+	// Build border with title embedded in top line
+	border := lipgloss.RoundedBorder()
+	titleStyled := lipgloss.NewStyle().Foreground(borderColor).Bold(true).Render(title)
+	topBorder := border.TopLeft +
+		strings.Repeat(border.Top, 1) +
+		titleStyled +
+		strings.Repeat(border.Top, max(0, width-lipgloss.Width(title)-2)) +
+		border.TopRight
+
+	// Render content box without top border
+	boxStyle := lipgloss.NewStyle().
+		Border(border).
+		BorderTop(false).
+		BorderForeground(borderColor).
+		Width(width).
+		Height(height)
+
+	return topBorder + "\n" + boxStyle.Render(content)
+}
+
+// placeOverlay renders a modal centered over the background.
+func placeOverlay(width, height int, modal, background string) string {
+	return lipgloss.Place(
+		width, height,
+		lipgloss.Center, lipgloss.Center,
+		modal,
+		lipgloss.WithWhitespaceBackground(lipgloss.NoColor{}),
+	)
+}
+
+func Run(config *scanner.Config, ignoreDirErrors bool) error {
+	m := newModel(config, ignoreDirErrors)
+	p := tea.NewProgram(m, tea.WithAltScreen())
+
+	// Set up log writer to pipe into the TUI
+	m.program = p
+	log.SetOutput(logWriter{program: p})
+
+	_, err := p.Run()
 	return err
 }
 
-func (u *ui) updateDiff(g *gocui.Gui) {
-	currentRepo := u.getCurrentRepo(g)
-	st, ok := u.repositories[currentRepo]
-	s := ""
-	if ok {
-		if len(st.Status) > 0 {
-			s += fmt.Sprintln(" SW")
-			s += fmt.Sprintln("-----")
-			paths := make([]string, 0, len(st.Status))
-			for path := range st.Status {
-				paths = append(paths, path)
-			}
-			sort.Strings(paths)
-			for _, path := range paths {
-				status := st.Status[path]
-				s += fmt.Sprintf(" %c%c  %s\n", status.Staging, status.Worktree, path)
-			}
-		} else {
-
-		}
+func min(a, b int) int {
+	if a < b {
+		return a
 	}
-	status, _ := g.View(vStatus)
-	status.Clear()
-	fmt.Fprint(status, s)
+	return b
 }
 
-func (u *ui) requestScan(g *gocui.Gui, v *gocui.View) error {
-	u.flushScan()
-	u.scan <- struct{}{}
-	return nil
-}
-
-func (u *ui) updateDirList(g *gocui.Gui) {
-	repo, err := g.View(vRepo)
-	if err != nil {
-		return
+func max(a, b int) int {
+	if a > b {
+		return a
 	}
-	repo.Clear()
-	paths := make([]string, 0, len(u.repositories))
-	for r := range u.repositories {
-		paths = append(paths, r)
-	}
-	sort.Strings(paths)
-	for i := range paths {
-		if i > 0 {
-			fmt.Fprintln(repo, "")
-		}
-		fmt.Fprint(repo, paths[i])
-	}
-	u.updateDiff(g)
-}
-
-func (u *ui) Run(g *gocui.Gui) {
-	err := u.requestScan(g, nil)
-	if err != nil {
-		return
-	}
-
-	update := func() {
-		g.Update(func(g *gocui.Gui) error {
-			return nil
-		})
-	}
-
-	for range u.scan {
-		atomic.StoreUint32(&u.scanning, 1)
-		update()
-
-		t := time.NewTicker(100 * time.Millisecond)
-		scanDone := make(chan struct{})
-		go func() {
-			u.repositories, u.err = scanner.Scan(u.config, u.ignore_dir_errors)
-			if u.err == nil {
-				u.updateDirList(g)
-			}
-			scanDone <- struct{}{}
-			update()
-		}()
-	updateLoop:
-		for {
-			select {
-			case <-t.C:
-				update()
-			case <-scanDone:
-				t.Stop()
-				break updateLoop
-			}
-		}
-
-		atomic.StoreUint32(&u.scanning, 0)
-		u.flushScan()
-		update()
-	}
-}
-
-func (u *ui) flushScan() {
-	for {
-		select {
-		case <-u.scan:
-		default:
-			return
-		}
-	}
+	return b
 }
