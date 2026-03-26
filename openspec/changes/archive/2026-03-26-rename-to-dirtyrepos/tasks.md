@@ -33,4 +33,4 @@
 
 ## 7. GitHub Repo Rename (Manual)
 
-- [ ] 7.1 Rename repository on GitHub: Settings → General → "dirty-repo-scanner"
+- [x] 7.1 Rename repository on GitHub: Settings → General → "dirty-repo-scanner"

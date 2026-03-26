@@ -66,15 +66,4 @@ make lint
 - [x] exclude part of paths
 - [x] custom edit command
 - [x] Allow configuration of editor
-
-## Pim Future
-
-- [ ] flake
-- [ ] refact into src
-- [ ] output to json
-- [ ] deamon mode
-- [ ] menubar https://github.com/fyne-io/systray
-- [ ] add regex to exclude
-- [ ] if no starting slash, compare from right to left
-- [ ] help popup
-- [ ] enable global gitignore conf which is already visible in config
+- [x] flake

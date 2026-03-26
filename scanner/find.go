@@ -139,7 +139,7 @@ func Walk(ctx context.Context, config *Config, results chan string, ignore_dir_e
 				cancel()
 			} else if err != nil {
 				if ignore_dir_errors {
-					log.Printf("ERROR: %s: %v", j, err)
+					log.Printf("ERROR: %s: %v", globPath, err)
 					return nil
 				} else {
 					return err

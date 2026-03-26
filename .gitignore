@@ -2,3 +2,5 @@ drs.app
 drs
 drs.exe
 .vscode
+coverage.out
+coverage.html
