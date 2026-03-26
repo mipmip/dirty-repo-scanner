@@ -67,6 +67,15 @@ var (
 			BorderForeground(lipgloss.Color("1")). // red
 			Padding(1, 2).
 			Align(lipgloss.Center)
+
+	navBarStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("236")).
+			Foreground(lipgloss.Color("252"))
+
+	navBarKeyStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("236")).
+			Foreground(lipgloss.Color("2")).
+			Bold(true)
 )
 
 type model struct {
@@ -237,7 +246,7 @@ func (m model) repoPanelHeight() int {
 func (m model) statusPanelHeight() int {
 	repoH := m.repoPanelHeight() + 2 // +border
 	logH := m.logPanelHeight() + 2    // +border
-	remaining := m.height - repoH - logH
+	remaining := m.height - repoH - logH - 1 // -1 for nav bar
 	if remaining < 3 {
 		return 3
 	}
@@ -327,7 +336,10 @@ func (m model) View() string {
 	// Log panel
 	logPanel := m.renderPanel(viewLog, innerWidth, m.logPanelHeight(), m.logViewport.View())
 
-	view := lipgloss.JoinVertical(lipgloss.Left, repoPanel, statusPanel, logPanel)
+	// Nav bar
+	navBar := m.renderNavBar()
+
+	view := lipgloss.JoinVertical(lipgloss.Left, repoPanel, statusPanel, logPanel, navBar)
 
 	// Modal overlays
 	if m.scanning {
@@ -410,6 +422,36 @@ func (m model) renderPanel(view int, width int, height int, content string) stri
 		Height(height)
 
 	return topBorder + "\n" + boxStyle.Render(content)
+}
+
+func (m model) renderNavBar() string {
+	keys := []struct{ key, action string }{
+		{"q", "quit"},
+		{"s", "scan"},
+		{"e", "edit"},
+		{"tab", "switch"},
+		{"↑↓", "navigate"},
+	}
+
+	var left strings.Builder
+	for i, k := range keys {
+		if i > 0 {
+			left.WriteString(navBarStyle.Render("  "))
+		}
+		left.WriteString(navBarKeyStyle.Render(k.key))
+		left.WriteString(navBarStyle.Render(" " + k.action))
+	}
+
+	right := navBarStyle.Render("dirty-repo-scanner")
+
+	bar := lipgloss.PlaceHorizontal(
+		m.width,
+		lipgloss.Left,
+		left.String()+strings.Repeat(" ", max(0, m.width-lipgloss.Width(left.String())-lipgloss.Width(right)))+right,
+		lipgloss.WithWhitespaceBackground(lipgloss.Color("236")),
+	)
+
+	return bar
 }
 
 // placeOverlay renders a modal centered over the background.
