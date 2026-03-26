@@ -1,4 +1,4 @@
-module github.com/mipmip/dirtygit
+module github.com/mipmip/dirty-repo-scanner
 
 go 1.24.2
 

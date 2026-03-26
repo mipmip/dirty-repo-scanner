@@ -1,27 +1,27 @@
-# dirtygit
+# dirty-repo-scanner
 
 Do you find yourself context-switching between a bunch of different git repos?
 
 Have you ever accidentally discovered that changes you've made locally have not
 been committed or pushed to your git server?
 
-`dirtygit` is a text-mode UI tool to find git repos that have uncommitted files or which have not
+`drs` (dirty-repo-scanner) is a text-mode UI tool to find git repos that have uncommitted files or which have not
 been pushed to a remote.
 
 ## Source-mode installation
 
 ```bash
-go install github.com/boyvinall/dirtygit@master
+go install github.com/mipmip/dirty-repo-scanner@master
 ```
 
 ## Configuration
 
-Copy [.dirtygit.yml](.dirtygit.yml) to `~/.dirtygit.yml` and edit to your needs.
+Copy [.dirty-repo-scanner.yml](.dirty-repo-scanner.yml) to `~/.dirty-repo-scanner.yml` and edit to your needs.
 
 ## Running
 
 ```bash
-dirtygit [ <directories...> ]
+drs [ <directories...> ]
 ```
 
 If one/more directories are specified as `<directories>`, then this will override the
@@ -53,7 +53,6 @@ make lint
 ## Future
 
 - Also scan for local changes which have not been pushed
-- [x] Allow configuration of editor
 - Improve error logging and presentation
 - Possibly show git diff
 - Allow deletion of files / repositories
@@ -66,6 +65,7 @@ make lint
 - [x] dir wildcards
 - [x] exclude part of paths
 - [x] custom edit command
+- [x] Allow configuration of editor
 
 ## Pim Future
 

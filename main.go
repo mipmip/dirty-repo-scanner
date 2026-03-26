@@ -9,22 +9,22 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/urfave/cli/v2"
 
-	"github.com/mipmip/dirtygit/scanner"
-	"github.com/mipmip/dirtygit/ui"
+	"github.com/mipmip/dirty-repo-scanner/scanner"
+	"github.com/mipmip/dirty-repo-scanner/ui"
 )
 
 func getDefaultConfigPath() string {
 	home, err := homedir.Dir()
 	_ = err // ignore
-	return filepath.Join(home, ".dirtygit.yml")
+	return filepath.Join(home, ".dirty-repo-scanner.yml")
 }
 
-//go:embed .dirtygit.yml
+//go:embed .dirty-repo-scanner.yml
 var defaultConfig string
 
 func main() {
 	app := cli.NewApp()
-	app.Name = "dirtygit"
+	app.Name = "dirty-repo-scanner"
 	app.Usage = "Finds git repos in need of commitment"
 	app.EnableBashCompletion = true
 	app.CommandNotFound = func(c *cli.Context, cmd string) {

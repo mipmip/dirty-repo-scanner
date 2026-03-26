@@ -1,6 +1,6 @@
 { lib, buildGoModule, go }:
 buildGoModule rec {
-  pname = "dirtygit";
+  pname = "dirty-repo-scanner";
 
   version = "1.0";
 
@@ -12,9 +12,9 @@ buildGoModule rec {
 
   meta = with lib; {
     description = ''
-      Convert aws config and credential files into a single JSON object
+      Find dirty repos
     '';
-    homepage = "https://github.com/mipmip/dirtygit";
+    homepage = "https://github.com/mipmip/dirty-repo-scanner";
     license = licenses.bsd2;
   };
 

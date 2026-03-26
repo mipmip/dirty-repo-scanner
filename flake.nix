@@ -17,10 +17,10 @@
           pkgs = nixpkgsFor.${system};
         in
         {
-          dirtygit = pkgs.callPackage ./package.nix {};
+          dirty-repo-scanner = pkgs.callPackage ./package.nix {};
         });
 
-      defaultPackage = forAllSystems (system: self.packages.${system}.dirtygit);
+      defaultPackage = forAllSystems (system: self.packages.${system}.dirty-repo-scanner);
 
       devShells = forAllSystems (system:
         let
