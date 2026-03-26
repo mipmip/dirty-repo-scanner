@@ -1,5 +1,5 @@
 build:
-	go build -o drs main.go
+	go build -o drs ./src
 
 test:
 	go test ./...
