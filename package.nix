@@ -1,8 +1,8 @@
-{ lib, buildGoModule, go }:
+{ lib, buildGoModule, go, version ? "0.2.0" }:
 buildGoModule rec {
   pname = "dirty-repo-scanner";
 
-  version = "1.0";
+  inherit version;
 
   src = ./.;
 

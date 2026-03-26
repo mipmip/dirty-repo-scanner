@@ -50,20 +50,3 @@ for both staged changes (`S`) and working directory (`W`).
 make lint
 ```
 
-## Future
-
-- Also scan for local changes which have not been pushed
-- Improve error logging and presentation
-- Possibly show git diff
-- Allow deletion of files / repositories
-- Add tests!
-
-## Pim First
-
-- [x] ignore dir errors
-- [x] simple build task
-- [x] dir wildcards
-- [x] exclude part of paths
-- [x] custom edit command
-- [x] Allow configuration of editor
-- [x] flake

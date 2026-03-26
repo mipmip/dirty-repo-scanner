@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/mitchellh/go-homedir"
 	"github.com/urfave/cli/v2"
@@ -22,9 +23,17 @@ func getDefaultConfigPath() string {
 //go:embed .dirty-repo-scanner.yml
 var defaultConfig string
 
+//go:embed VERSION
+var version string
+
+func init() {
+	version = strings.TrimSpace(version)
+}
+
 func main() {
 	app := cli.NewApp()
 	app.Name = "dirty-repo-scanner"
+	app.Version = version
 	app.Usage = "Finds git repos in need of commitment"
 	app.EnableBashCompletion = true
 	app.CommandNotFound = func(c *cli.Context, cmd string) {
