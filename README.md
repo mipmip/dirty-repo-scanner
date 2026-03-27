@@ -16,7 +16,9 @@ go install github.com/mipmip/dirty-repo-scanner@master
 
 ## Configuration
 
-Copy [.dirty-repo-scanner.yml](.dirty-repo-scanner.yml) to `~/.dirty-repo-scanner.yml` and edit to your needs.
+Copy [config.yml](src/config.yml) to `~/.config/dirty-repo-scanner/config.yml` and edit to your needs.
+
+The config path follows the XDG Base Directory Specification. If `$XDG_CONFIG_HOME` is set, the config is read from `$XDG_CONFIG_HOME/dirty-repo-scanner/config.yml`.
 
 ## Running
 

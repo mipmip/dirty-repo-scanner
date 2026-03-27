@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mitchellh/go-homedir"
 	"github.com/urfave/cli/v2"
 
 	"github.com/mipmip/dirty-repo-scanner/src/scanner"
@@ -15,12 +14,14 @@ import (
 )
 
 func getDefaultConfigPath() string {
-	home, err := homedir.Dir()
-	_ = err // ignore
-	return filepath.Join(home, ".dirty-repo-scanner.yml")
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		configDir = filepath.Join(os.Getenv("HOME"), ".config")
+	}
+	return filepath.Join(configDir, "dirty-repo-scanner", "config.yml")
 }
 
-//go:embed .dirty-repo-scanner.yml
+//go:embed config.yml
 var defaultConfig string
 
 //go:embed VERSION
