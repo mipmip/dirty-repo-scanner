@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-27
+
 - Rename project from dirtygit to dirty-repo-scanner (binary: drs)
 - Add testing framework with scanner and UI tests
 - Add test coverage reporting (make cover)
