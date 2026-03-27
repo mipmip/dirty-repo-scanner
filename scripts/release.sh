@@ -171,9 +171,26 @@ success "Created tag v$NEW_VERSION"
 
 # Push to remote
 info "Pushing to remote..."
-git push origin HEAD:master
+# Determine the main branch name (works with detached HEAD in jj-colocated repos)
+MAIN_BRANCH=""
+for candidate in main master; do
+    if git rev-parse --verify "refs/heads/$candidate" &>/dev/null; then
+        MAIN_BRANCH="$candidate"
+        break
+    fi
+    if git ls-remote --heads origin "$candidate" 2>/dev/null | grep -q "$candidate"; then
+        MAIN_BRANCH="$candidate"
+        break
+    fi
+done
+
+if [[ -z "$MAIN_BRANCH" ]]; then
+    error "Could not determine main branch (tried 'main' and 'master')"
+fi
+
+git push origin HEAD:refs/heads/$MAIN_BRANCH
 git push origin "v$NEW_VERSION"
-success "Pushed commit and tag to remote"
+success "Pushed commit and tag to remote ($MAIN_BRANCH)"
 
 # --- Done ---
 echo ""
