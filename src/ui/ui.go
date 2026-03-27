@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -94,6 +95,7 @@ type model struct {
 	width             int
 	height            int
 	program           *tea.Program
+	inTmux            bool
 }
 
 func newModel(config *scanner.Config, ignoreDirErrors bool) model {
@@ -104,6 +106,7 @@ func newModel(config *scanner.Config, ignoreDirErrors bool) model {
 		config:          config,
 		ignoreDirErrors: ignoreDirErrors,
 		scanning:        true,
+		inTmux:          os.Getenv("TMUX") != "",
 		spinner:         s,
 		statusViewport:  viewport.New(0, 0),
 		logViewport:     viewport.New(0, 0),
@@ -305,12 +308,20 @@ func (m model) doEdit() tea.Cmd {
 	}
 
 	cmdStr := strings.Replace(m.config.EditCommand, "%WORKING_DIRECTORY", currentRepo, -1)
-	args := strings.Fields(cmdStr)
-	if len(args) == 0 {
+	if cmdStr == "" {
 		return nil
 	}
 
-	c := exec.Command(args[0], args[1:]...)
+	var c *exec.Cmd
+	if m.inTmux {
+		c = exec.Command("tmux", "display-popup", "-E", "-w", "80%", "-h", "80%", "-d", currentRepo)
+	} else {
+		args := strings.Fields(cmdStr)
+		if len(args) == 0 {
+			return nil
+		}
+		c = exec.Command(args[0], args[1:]...)
+	}
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return nil
 	})

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **BREAKING**: Config path moved from `~/.dirty-repo-scanner.yml` to `~/.config/dirty-repo-scanner/config.yml` (XDG compliant). Move your config file manually.
 - Drop `go-homedir` dependency in favor of `os.UserConfigDir()`
+- Detect running in tmux and then run e tmux popup
 
 ## [0.2.0] - 2026-03-27
 
