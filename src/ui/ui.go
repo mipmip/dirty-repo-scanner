@@ -172,7 +172,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch m.activeView {
 				case viewRepo:
 					m.cursor = 0
-					m.updateStatusContent()
+					cmds = append(cmds, m.updateStatusContent())
 				case viewStatus:
 					m.fileCursor = 0
 					cmds = append(cmds, m.fetchDiff())
@@ -227,6 +227,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.activeView = viewRepo
 				}
 			}
+			// Fetch diff when entering status panel, clear when leaving
+			if m.activeView == viewStatus && len(m.filePaths) > 0 {
+				cmds = append(cmds, m.fetchDiff())
+			} else {
+				m.diffViewport.SetContent("")
+			}
 		case "g":
 			m.pendingKey = "g"
 		case "G":
@@ -234,7 +240,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case viewRepo:
 				if len(m.repoPaths) > 0 {
 					m.cursor = len(m.repoPaths) - 1
-					m.updateStatusContent()
+					cmds = append(cmds, m.updateStatusContent())
 				}
 			case viewStatus:
 				if len(m.filePaths) > 0 {
@@ -249,7 +255,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.activeView {
 			case viewRepo:
 				m.cursor = min(m.cursor+half, len(m.repoPaths)-1)
-				m.updateStatusContent()
+				cmds = append(cmds, m.updateStatusContent())
 			case viewStatus:
 				if len(m.filePaths) > 0 {
 					m.fileCursor = min(m.fileCursor+half, len(m.filePaths)-1)
@@ -263,7 +269,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.activeView {
 			case viewRepo:
 				m.cursor = max(m.cursor-half, 0)
-				m.updateStatusContent()
+				cmds = append(cmds, m.updateStatusContent())
 			case viewStatus:
 				if len(m.filePaths) > 0 {
 					m.fileCursor = max(m.fileCursor-half, 0)
@@ -276,7 +282,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeView == viewRepo {
 				if m.cursor > 0 {
 					m.cursor--
-					m.updateStatusContent()
+					cmds = append(cmds, m.updateStatusContent())
 				}
 			} else if m.activeView == viewStatus {
 				if len(m.filePaths) > 0 && m.fileCursor > 0 {
@@ -290,7 +296,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeView == viewRepo {
 				if m.cursor < len(m.repoPaths)-1 {
 					m.cursor++
-					m.updateStatusContent()
+					cmds = append(cmds, m.updateStatusContent())
 				}
 			} else if m.activeView == viewStatus {
 				if len(m.filePaths) > 0 && m.fileCursor < len(m.filePaths)-1 {
@@ -317,7 +323,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = max(0, len(m.repoPaths)-1)
 			}
 			m.recalcLayout()
-			m.updateStatusContent()
+			cmds = append(cmds, m.updateStatusContent())
 		}
 
 	case diffMsg:
@@ -404,12 +410,13 @@ func (m model) halfPage() int {
 	}
 }
 
-func (m *model) updateStatusContent() {
+// updateStatusContent rebuilds the file list and returns a Cmd to fetch the diff for the first file.
+func (m *model) updateStatusContent() tea.Cmd {
 	if len(m.repoPaths) == 0 {
 		m.filePaths = nil
 		m.fileCursor = 0
 		m.diffViewport.SetContent("")
-		return
+		return nil
 	}
 	currentRepo := m.repoPaths[m.cursor]
 	st, ok := m.repositories[currentRepo]
@@ -417,7 +424,7 @@ func (m *model) updateStatusContent() {
 		m.filePaths = nil
 		m.fileCursor = 0
 		m.diffViewport.SetContent("")
-		return
+		return nil
 	}
 
 	m.filePaths = make([]string, 0, len(st.Status))
@@ -427,6 +434,7 @@ func (m *model) updateStatusContent() {
 	sort.Strings(m.filePaths)
 	m.fileCursor = 0
 	m.diffViewport.SetContent("")
+	return nil
 }
 
 func (m model) doScan() tea.Cmd {
