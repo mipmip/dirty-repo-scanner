@@ -35,13 +35,13 @@ If one/more directories are specified as `<directories>`, then this will overrid
 
 Simple key navigation in the UI as follows:
 
-| Key               | Action                                           |
-| ----------------- | ------------------------------------------------ |
-| `<up>` / `<down>` | Navigation inside repositories or diff views     |
-| `<tab>`           | switch focus between repositories and diff views |
-| `e`               | Open selected repo in editor (current vscode)    |
-| `s`               | Rescan directories                               |
-| `q` / `ctrl-C`    | quit                                             |
+| Key                        | Action                                           |
+| -------------------------- | ------------------------------------------------ |
+| `j`/`k` or `<up>`/`<down>` | Navigation inside repositories or diff views     |
+| `<tab>`                    | switch focus between repositories and diff views |
+| `<enter>`                  | Open terminal in selected repo directory         |
+| `s`                        | Rescan directories                               |
+| `q` / `ctrl-C`             | quit                                             |
 
 Inside the "diff" view, a list of dirty files is shown, with the git status
 for both staged changes (`S`) and working directory (`W`).

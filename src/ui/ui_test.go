@@ -66,7 +66,7 @@ func TestLogPanelHeight(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := model{height: tt.height}
+			m := model{height: tt.height, logVisible: true}
 			got := m.logPanelHeight()
 			if got < 1 {
 				t.Errorf("got %d, want >= 1", got)
@@ -76,6 +76,14 @@ func TestLogPanelHeight(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("hidden log returns 0", func(t *testing.T) {
+		m := model{height: 40, logVisible: false}
+		got := m.logPanelHeight()
+		if got != 0 {
+			t.Errorf("got %d, want 0 when log hidden", got)
+		}
+	})
 }
 
 func TestStatusPanelHeight(t *testing.T) {
@@ -91,7 +99,7 @@ func TestStatusPanelHeight(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := model{height: tt.height}
+			m := model{height: tt.height, logVisible: true}
 			m.repoPaths = make([]string, tt.repoCount)
 			got := m.statusPanelHeight()
 			if got < 1 {
@@ -108,6 +116,47 @@ func TestStatusPanelHeight(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("hidden log gives more space to status", func(t *testing.T) {
+		mVisible := model{height: 40, logVisible: true}
+		mVisible.repoPaths = make([]string, 5)
+		mHidden := model{height: 40, logVisible: false}
+		mHidden.repoPaths = make([]string, 5)
+
+		statusVisible := mVisible.statusPanelHeight()
+		statusHidden := mHidden.statusPanelHeight()
+		if statusHidden <= statusVisible {
+			t.Errorf("hidden log status height %d should be > visible log status height %d", statusHidden, statusVisible)
+		}
+	})
+}
+
+func TestTabCyclingSkipsHiddenLog(t *testing.T) {
+	t.Run("tab skips log when hidden", func(t *testing.T) {
+		m := model{logVisible: false, activeView: viewRepo}
+		// Simulate tab: repo -> status
+		if m.logVisible {
+			m.activeView = (m.activeView + 1) % 3
+		} else {
+			if m.activeView == viewRepo {
+				m.activeView = viewStatus
+			} else {
+				m.activeView = viewRepo
+			}
+		}
+		if m.activeView != viewStatus {
+			t.Errorf("got %d, want viewStatus (%d)", m.activeView, viewStatus)
+		}
+		// Tab again: status -> repo (skip log)
+		if m.activeView == viewRepo {
+			m.activeView = viewStatus
+		} else {
+			m.activeView = viewRepo
+		}
+		if m.activeView != viewRepo {
+			t.Errorf("got %d, want viewRepo (%d)", m.activeView, viewRepo)
+		}
+	})
 }
 
 func TestRenderRepoList(t *testing.T) {

@@ -92,7 +92,7 @@ func main() {
 			return nil
 		}
 
-		err = ui.Run(config, c.Bool("ignore_dir_errors"))
+		err = ui.Run(config, c.Bool("ignore_dir_errors"), version)
 		if err != nil {
 			return err
 		}
