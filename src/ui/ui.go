@@ -591,7 +591,7 @@ func (m model) View() string {
 
 	// Modal overlays
 	if m.scanning {
-		modal := modalStyle.Width(20).Render(m.spinner.View() + " Scanning...")
+		modal := modalStyle.Width(40).Render(m.spinner.View() + " Scanning for dirty repo's...")
 		view = placeOverlay(m.width, m.height, modal, view)
 	}
 	if m.err != nil {

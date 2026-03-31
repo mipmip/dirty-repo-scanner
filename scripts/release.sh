@@ -116,31 +116,31 @@ fi
 # --- Nix vendorHash Update ---
 update_nix_vendor_hash() {
     if ! command -v nix &> /dev/null; then
-        warn "nix is not installed — skipping vendorHash update in flake.nix"
+        warn "nix is not installed — skipping vendorHash update in package.nix"
         return 0
     fi
 
-    info "Updating vendorHash in flake.nix..."
+    info "Updating vendorHash in package.nix..."
 
     # Save the current vendorHash
-    OLD_HASH=$(grep 'vendorHash' flake.nix | sed 's/.*"\(.*\)".*/\1/')
+    OLD_HASH=$(grep 'vendorHash' package.nix | sed 's/.*"\(.*\)".*/\1/')
 
     # Temporarily set vendorHash to empty to force nix to compute the correct one
-    sed -i "s|vendorHash = \".*\"|vendorHash = \"\"|" flake.nix
+    sed -i "s|vendorHash = \".*\"|vendorHash = \"\"|" package.nix
 
     # Run nix build and capture the expected hash from the error output
-    NIX_OUTPUT=$(nix build .#default 2>&1 || true)
+    NIX_OUTPUT=$(nix build .#dirty-repo-scanner 2>&1 || true)
     NEW_HASH=$(echo "$NIX_OUTPUT" | grep "got:" | sed 's/.*got: *//')
 
     if [[ -z "$NEW_HASH" ]]; then
         # Restore old hash if we couldn't determine the new one
-        sed -i "s|vendorHash = \".*\"|vendorHash = \"$OLD_HASH\"|" flake.nix
+        sed -i "s|vendorHash = \".*\"|vendorHash = \"$OLD_HASH\"|" package.nix
         warn "Could not determine new vendorHash — restored previous hash"
         return 0
     fi
 
-    # Update flake.nix with the correct hash
-    sed -i "s|vendorHash = \".*\"|vendorHash = \"$NEW_HASH\"|" flake.nix
+    # Update package.nix with the correct hash
+    sed -i "s|vendorHash = \".*\"|vendorHash = \"$NEW_HASH\"|" package.nix
     success "Updated vendorHash to $NEW_HASH"
 }
 
@@ -161,7 +161,7 @@ success "Updated CHANGELOG.md with version $NEW_VERSION"
 update_nix_vendor_hash
 
 # Commit changes
-git add "$VERSION_FILE" CHANGELOG.md flake.nix
+git add "$VERSION_FILE" CHANGELOG.md package.nix
 git commit -m "chore: release v$NEW_VERSION"
 success "Created release commit"
 
