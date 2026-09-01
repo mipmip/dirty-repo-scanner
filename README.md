@@ -46,6 +46,39 @@ Simple key navigation in the UI as follows:
 Inside the "diff" view, a list of dirty files is shown, with the git status
 for both staged changes (`S`) and working directory (`W`).
 
+## Multiplex mode
+
+Run `drs --multiplex` to turn the scanner into a quick repo switcher. In this
+mode, pressing `<enter>` on a repo runs the configured `switch_command` and then
+quits, instead of opening the editor. This is meant to be launched inside a tmux
+popup so selecting a repo switches your session to it.
+
+Configure the command in `config.yml`:
+
+```yaml
+switch_command: tmux switch-client -t %REPO_NAME
+```
+
+Two placeholders are substituted for the selected repo before the command runs:
+
+| Placeholder          | Value                              |
+| -------------------- | ---------------------------------- |
+| `%WORKING_DIRECTORY` | the repository's absolute path     |
+| `%REPO_NAME`         | the repository directory base name |
+
+The command is split with shell-quoting rules and executed without a shell, so
+quoted arguments and paths containing spaces are preserved. `--multiplex`
+requires `switch_command` to be set, otherwise `drs` exits with an error.
+
+Example tmux binding that opens the scanner in a popup:
+
+```tmux
+bind-key C-d display-popup -E "drs --multiplex"
+```
+
+Note: tmux rejects `.` and `:` in session names, so choose a `switch_command`
+that suits your repository names when using `%REPO_NAME`.
+
 ## Development
 
 ```bash

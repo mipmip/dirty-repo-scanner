@@ -49,14 +49,18 @@ func main() {
 		},
 
 		&cli.BoolFlag{
-			Name:  "ignore_dir_errors",
+			Name:    "ignore_dir_errors",
 			Aliases: []string{"i"},
-			Value: true,
-			Usage: "Don't halt on errors while finding dirs",
+			Value:   true,
+			Usage:   "Don't halt on errors while finding dirs",
 		},
 		&cli.BoolFlag{
 			Name:  "debug",
 			Usage: "show debug output instead of UI",
+		},
+		&cli.BoolFlag{
+			Name:  "multiplex",
+			Usage: "multiplex mode: Enter runs switch_command and quits (for tmux popups)",
 		},
 	}
 	app.Action = func(c *cli.Context) error {
@@ -92,7 +96,12 @@ func main() {
 			return nil
 		}
 
-		err = ui.Run(config, c.Bool("ignore_dir_errors"), version)
+		multiplex := c.Bool("multiplex")
+		if multiplex && strings.TrimSpace(config.SwitchCommand) == "" {
+			return fmt.Errorf("--multiplex requires 'switch_command' to be set in the config")
+		}
+
+		err = ui.Run(config, c.Bool("ignore_dir_errors"), version, multiplex)
 		if err != nil {
 			return err
 		}

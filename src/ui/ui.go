@@ -82,39 +82,41 @@ var (
 			Foreground(lipgloss.Color("2")).
 			Bold(true)
 
-	diffAddedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))   // green
-	diffDeletedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))   // red
-	diffHunkStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))   // cyan
-	diffMetaStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))   // yellow
+	diffAddedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // green
+	diffDeletedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // red
+	diffHunkStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("6")) // cyan
+	diffMetaStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // yellow
 )
 
 type model struct {
-	config            *scanner.Config
-	ignoreDirErrors   bool
-	repositories      scanner.MultiGitStatus
-	repoPaths         []string
-	cursor            int
-	activeView        int
-	scanning          bool
-	err               error
-	spinner           spinner.Model
-	statusViewport    viewport.Model
-	logViewport       viewport.Model
-	logContent        string
-	fileCursor        int
-	filePaths         []string
-	diffViewport      viewport.Model
-	logVisible        bool
-	logShownOnce      bool
-	pendingKey        string
-	width             int
-	height            int
-	program           *tea.Program
-	inTmux            bool
-	version           string
+	config          *scanner.Config
+	ignoreDirErrors bool
+	repositories    scanner.MultiGitStatus
+	repoPaths       []string
+	cursor          int
+	activeView      int
+	scanning        bool
+	err             error
+	spinner         spinner.Model
+	statusViewport  viewport.Model
+	logViewport     viewport.Model
+	logContent      string
+	fileCursor      int
+	filePaths       []string
+	diffViewport    viewport.Model
+	logVisible      bool
+	logShownOnce    bool
+	pendingKey      string
+	width           int
+	height          int
+	program         *tea.Program
+	inTmux          bool
+	version         string
+	multiplex       bool
+	runCommand      func([]string) error // test seam; nil uses runArgv
 }
 
-func newModel(config *scanner.Config, ignoreDirErrors bool, version string) model {
+func newModel(config *scanner.Config, ignoreDirErrors bool, version string, multiplex bool) model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 
@@ -124,6 +126,7 @@ func newModel(config *scanner.Config, ignoreDirErrors bool, version string) mode
 		scanning:        true,
 		inTmux:          os.Getenv("TMUX") != "",
 		version:         version,
+		multiplex:       multiplex,
 		spinner:         s,
 		statusViewport:  viewport.New(0, 0),
 		diffViewport:    viewport.New(0, 0),
@@ -191,6 +194,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.scanning = true
 			cmds = append(cmds, m.doScan())
 		case "enter":
+			if m.multiplex {
+				var cmd tea.Cmd
+				m, cmd = m.doSwitch()
+				return m, cmd
+			}
 			cmd := m.doEdit()
 			if cmd != nil {
 				return m, cmd
@@ -538,7 +546,7 @@ func (m model) doEdit() tea.Cmd {
 		return nil
 	}
 
-	cmdStr := strings.Replace(m.config.EditCommand, "%WORKING_DIRECTORY", currentRepo, -1)
+	cmdStr := renderCommand(m.config.EditCommand, currentRepo)
 	if cmdStr == "" {
 		return nil
 	}
@@ -550,14 +558,54 @@ func (m model) doEdit() tea.Cmd {
 		}
 	}
 
-	args := strings.Fields(cmdStr)
-	if len(args) == 0 {
+	args, err := splitArgs(cmdStr)
+	if err != nil || len(args) == 0 {
 		return nil
 	}
 	c := exec.Command(args[0], args[1:]...)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return nil
 	})
+}
+
+// doSwitch is the multiplex-mode Enter action: render the configured
+// switch_command for the selected repo, run it without a shell, and quit on
+// success so a surrounding tmux popup closes. A failure keeps the TUI open with
+// an error overlay.
+func (m model) doSwitch() (model, tea.Cmd) {
+	if len(m.repoPaths) == 0 || m.cursor >= len(m.repoPaths) {
+		return m, nil
+	}
+	currentRepo := m.repoPaths[m.cursor]
+	if currentRepo == "" {
+		return m, nil
+	}
+
+	cmdStr := renderCommand(m.config.SwitchCommand, currentRepo)
+	if strings.TrimSpace(cmdStr) == "" {
+		m.err = fmt.Errorf("switch_command is empty")
+		return m, nil
+	}
+
+	args, err := splitArgs(cmdStr)
+	if err != nil {
+		m.err = fmt.Errorf("switch_command: %w", err)
+		return m, nil
+	}
+	if len(args) == 0 {
+		m.err = fmt.Errorf("switch_command rendered to an empty command")
+		return m, nil
+	}
+
+	run := m.runCommand
+	if run == nil {
+		run = runArgv
+	}
+	if err := run(args); err != nil {
+		m.err = fmt.Errorf("switch failed: %w", err)
+		return m, nil
+	}
+	return m, tea.Quit
 }
 
 func (m model) View() string {
@@ -785,8 +833,8 @@ func colorizeDiff(content string) string {
 	return b.String()
 }
 
-func Run(config *scanner.Config, ignoreDirErrors bool, version string) error {
-	m := newModel(config, ignoreDirErrors, version)
+func Run(config *scanner.Config, ignoreDirErrors bool, version string, multiplex bool) error {
+	m := newModel(config, ignoreDirErrors, version, multiplex)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 
 	// Set up log writer to pipe into the TUI

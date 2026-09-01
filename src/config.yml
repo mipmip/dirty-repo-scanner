@@ -42,3 +42,10 @@ gitignore:
 followsymlinks: true
 
 edit_command: code %WORKING_DIRECTORY
+
+# multiplex mode (drs --multiplex): Enter runs this command for the selected
+# repo instead of the editor, then quits so a surrounding tmux popup closes.
+# %WORKING_DIRECTORY is the repo path, %REPO_NAME its directory basename.
+# The command is split with shell-quoting rules and run without a shell.
+#
+# switch_command: tmux switch-client -t %REPO_NAME
