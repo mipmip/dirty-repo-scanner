@@ -16,10 +16,28 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// VCS kinds recorded on a scanned repository.
+const (
+	VCSGit = "git"
+	VCSJJ  = "jj"
+)
+
 type RepoStatus struct {
 	git.Status
 
+	// VCS is the version-control kind of the working copy: VCSGit, or VCSJJ
+	// when a colocated `.jj` directory is present alongside `.git`.
+	VCS      string
 	ScanTime time.Duration
+}
+
+// detectVCS classifies a repository directory. A `.jj` directory (colocated jj
+// working copy) takes precedence over plain git.
+func detectVCS(dir string) string {
+	if fi, err := os.Stat(filepath.Join(dir, ".jj")); err == nil && fi.IsDir() {
+		return VCSJJ
+	}
+	return VCSGit
 }
 
 type MultiGitStatus map[string]RepoStatus
@@ -165,6 +183,7 @@ func Scan(config *Config, ignore_dir_errors bool) (MultiGitStatus, error) {
 			totalStatusDuration += duration
 			results[d] = RepoStatus{
 				Status:   st,
+				VCS:      detectVCS(d),
 				ScanTime: duration,
 			}
 		}

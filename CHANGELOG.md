@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--multiplex` mode: `<enter>` runs a configurable `switch_command` (with
   `%WORKING_DIRECTORY` / `%REPO_NAME` placeholders) and quits, for switching to
   a repo from a tmux popup.
+- Jujutsu (jj) support: colocated jj repos are marked in the list and show their
+  modified files and diffs via `jj` (`jj diff -s` / `jj diff --git`), while
+  dirtiness is still detected with read-only `git status`.
 
 ## [0.2.4] - 2026-03-31
 

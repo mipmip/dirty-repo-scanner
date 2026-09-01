@@ -79,6 +79,19 @@ bind-key C-d display-popup -E "drs --multiplex"
 Note: tmux rejects `.` and `:` in session names, so choose a `switch_command`
 that suits your repository names when using `%REPO_NAME`.
 
+## Jujutsu (jj) support
+
+Repositories driven by [Jujutsu](https://github.com/jj-vcs/jj) are recognised
+and marked in the list (`jj` vs `git`). For a jj repo, the modified-file list is
+produced with `jj diff -s` and per-file diffs with `jj diff --git`, while
+dirtiness is still detected with a read-only `git status` (the scan never
+snapshots or mutates working copies).
+
+Only **colocated** jj repos are supported — those created with
+`jj git init --colocate`, which keep both `.jj` and `.git`. Native-only jj
+working copies (no `.git`) are not scanned yet. If the `jj` executable is not on
+your `PATH`, jj repos fall back to git display with a warning in the log panel.
+
 ## Development
 
 ```bash

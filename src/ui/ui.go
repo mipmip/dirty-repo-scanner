@@ -86,7 +86,18 @@ var (
 	diffDeletedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // red
 	diffHunkStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("6")) // cyan
 	diffMetaStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // yellow
+
+	jjMarkerStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("5")) // magenta
+	gitMarkerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("4")) // blue
 )
+
+// vcsTag returns a fixed-width marker for a repository's VCS kind.
+func vcsTag(vcs string) string {
+	if vcs == scanner.VCSJJ {
+		return "jj "
+	}
+	return "git"
+}
 
 type model struct {
 	config          *scanner.Config
@@ -114,6 +125,10 @@ type model struct {
 	version         string
 	multiplex       bool
 	runCommand      func([]string) error // test seam; nil uses runArgv
+	jjChecked       bool
+	jjOK            bool
+	jjFileKinds     map[string]byte   // current jj repo: path -> change kind
+	jjCache         map[string]jjList // per-repo jj summary cache
 }
 
 func newModel(config *scanner.Config, ignoreDirErrors bool, version string, multiplex bool) model {
@@ -322,6 +337,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 		} else {
 			m.repositories = msg.repositories
+			m.jjCache = nil // fresh scan invalidates cached jj summaries
 			m.repoPaths = make([]string, 0, len(m.repositories))
 			for r := range m.repositories {
 				m.repoPaths = append(m.repoPaths, r)
@@ -418,8 +434,37 @@ func (m model) halfPage() int {
 	}
 }
 
+// jjEnsure reports whether the jj executable is available, warning once (into
+// the log panel) the first time it is missing.
+func (m *model) jjEnsure() bool {
+	if !m.jjChecked {
+		m.jjChecked = true
+		if _, err := exec.LookPath("jj"); err == nil {
+			m.jjOK = true
+		} else {
+			log.Println("WARNING: jj not found in PATH; showing jj repos with git")
+		}
+	}
+	return m.jjOK
+}
+
+// jjListFor returns the jj modified-file set for repo, caching per repo so that
+// navigating the repo list does not re-invoke jj on every move.
+func (m *model) jjListFor(repo string) jjList {
+	if m.jjCache == nil {
+		m.jjCache = map[string]jjList{}
+	}
+	if jl, ok := m.jjCache[repo]; ok {
+		return jl
+	}
+	jl := jjSummary(repo)
+	m.jjCache[repo] = jl
+	return jl
+}
+
 // updateStatusContent rebuilds the file list and returns a Cmd to fetch the diff for the first file.
 func (m *model) updateStatusContent() tea.Cmd {
+	m.jjFileKinds = nil
 	if len(m.repoPaths) == 0 {
 		m.filePaths = nil
 		m.fileCursor = 0
@@ -430,6 +475,16 @@ func (m *model) updateStatusContent() tea.Cmd {
 	st, ok := m.repositories[currentRepo]
 	if !ok || len(st.Status) == 0 {
 		m.filePaths = nil
+		m.fileCursor = 0
+		m.diffViewport.SetContent("")
+		return nil
+	}
+
+	// jj working copies source their file list from `jj diff -s`.
+	if st.VCS == scanner.VCSJJ && m.jjEnsure() {
+		jl := m.jjListFor(currentRepo)
+		m.filePaths = jl.paths
+		m.jjFileKinds = jl.kinds
 		m.fileCursor = 0
 		m.diffViewport.SetContent("")
 		return nil
@@ -461,8 +516,19 @@ func (m model) fetchDiff() tea.Cmd {
 	repoPath := m.repoPaths[m.cursor]
 	filePath := m.filePaths[m.fileCursor]
 
-	// Check if file is untracked
+	// jj working copies render their diff via `jj diff --git`.
 	st := m.repositories[repoPath]
+	if st.VCS == scanner.VCSJJ && m.jjOK {
+		return func() tea.Msg {
+			out := jjDiff(repoPath, filePath)
+			if out == "" {
+				return diffMsg{content: "No diff available"}
+			}
+			return diffMsg{content: out}
+		}
+	}
+
+	// Check if file is untracked
 	if fs, ok := st.Status[filePath]; ok && fs.Worktree == '?' {
 		return func() tea.Msg {
 			return diffMsg{content: "Untracked file"}
@@ -673,12 +739,18 @@ func (m model) renderRepoList(width int) string {
 		if i > offset {
 			b.WriteString("\n")
 		}
-		line := m.repoPaths[i]
+		path := m.repoPaths[i]
+		vcs := m.repositories[path].VCS
+		tag := vcsTag(vcs)
 		if i == m.cursor {
-			styled := selectedStyle.Width(width).Render(line)
+			styled := selectedStyle.Width(width).Render(tag + "  " + path)
 			b.WriteString(styled)
 		} else {
-			b.WriteString(normalStyle.Render(line))
+			markerStyle := gitMarkerStyle
+			if vcs == scanner.VCSJJ {
+				markerStyle = jjMarkerStyle
+			}
+			b.WriteString(markerStyle.Render(tag) + "  " + path)
 		}
 	}
 	return b.String()
@@ -709,8 +781,18 @@ func (m model) renderFileList(width int, height int) string {
 			b.WriteString("\n")
 		}
 		path := m.filePaths[i]
-		fs := st.Status[path]
-		line := fmt.Sprintf(" %c%c  %s", fs.Staging, fs.Worktree, path)
+		var line string
+		if st.VCS == scanner.VCSJJ && m.jjFileKinds != nil {
+			kind := m.jjFileKinds[path]
+			if kind == 0 {
+				kind = ' '
+			}
+			line = fmt.Sprintf(" %c   %s", kind, path)
+		} else if fs := st.Status[path]; fs != nil {
+			line = fmt.Sprintf(" %c%c  %s", fs.Staging, fs.Worktree, path)
+		} else {
+			line = fmt.Sprintf("     %s", path)
+		}
 		if isActive && i == m.fileCursor {
 			b.WriteString(selectedStyle.Width(width).Render(line))
 		} else {
