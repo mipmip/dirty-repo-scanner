@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	_ "embed"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 
+	"github.com/mipmip/dirty-repo-scanner/src/output"
 	"github.com/mipmip/dirty-repo-scanner/src/scanner"
 	"github.com/mipmip/dirty-repo-scanner/src/ui"
 )
@@ -59,16 +61,41 @@ func main() {
 			Usage: "show debug output instead of UI",
 		},
 		&cli.BoolFlag{
+			Name:  "list",
+			Usage: "print dirty repository paths, one per line, and exit",
+		},
+		&cli.BoolFlag{
+			Name:  "json",
+			Usage: "print dirty repositories as a JSON array and exit",
+		},
+		&cli.BoolFlag{
 			Name:  "multiplex",
 			Usage: "multiplex mode: Enter runs switch_command and quits (for tmux popups)",
 		},
 	}
 	app.Action = func(c *cli.Context) error {
+		listMode := c.Bool("list")
+		jsonMode := c.Bool("json")
+		debugMode := c.Bool("debug")
+		multiplex := c.Bool("multiplex")
+
+		modes := 0
+		for _, enabled := range []bool{listMode, jsonMode, debugMode, multiplex} {
+			if enabled {
+				modes++
+			}
+		}
+		if modes > 1 {
+			return fmt.Errorf("choose only one mode: --list, --json, --debug, or --multiplex")
+		}
 
 		config, err := scanner.ParseConfigFile(c.String("config"), defaultConfig)
 		if c.Args().Len() > 0 {
 
-			fmt.Println("Arguments given, skipping config")
+			fmt.Fprintln(os.Stderr, "Arguments given, skipping config")
+			if config == nil {
+				config = &scanner.Config{}
+			}
 			config.ScanDirs.Include = c.Args().Slice()
 
 		} else {
@@ -83,11 +110,29 @@ func main() {
 			}
 		}
 
-		if c.Bool("debug") {
-			var mgs scanner.MultiGitStatus
-			mgs, err = scanner.Scan(config, c.Bool("ignore_dir_errors"))
+		if listMode || jsonMode {
+			mgs, err := scanner.Scan(config, true)
 			if err != nil {
-				panic(err)
+				return err
+			}
+
+			var buf bytes.Buffer
+			if listMode {
+				err = output.List(&buf, mgs)
+			} else {
+				err = output.JSON(&buf, mgs)
+			}
+			if err != nil {
+				return err
+			}
+			_, err = os.Stdout.Write(buf.Bytes())
+			return err
+		}
+
+		if debugMode {
+			mgs, err := scanner.Scan(config, c.Bool("ignore_dir_errors"))
+			if err != nil {
+				return err
 			}
 
 			for r, st := range mgs {
@@ -95,8 +140,6 @@ func main() {
 			}
 			return nil
 		}
-
-		multiplex := c.Bool("multiplex")
 		if multiplex && strings.TrimSpace(config.SwitchCommand) == "" {
 			return fmt.Errorf("--multiplex requires 'switch_command' to be set in the config")
 		}
@@ -108,8 +151,8 @@ func main() {
 		return nil
 	}
 
-	err := app.Run(os.Args)
-	if err != nil {
-		fmt.Printf("%+v\n", err)
+	if err := app.Run(os.Args); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }

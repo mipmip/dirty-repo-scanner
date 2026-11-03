@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `--list` prints the absolute paths of dirty repositories, one per line and
+  sorted, for scripts and status bars.
+- `--json` prints dirty repositories as a JSON array with `path`, `vcs`, and
+  staged, unstaged, and untracked counts.
+- Both modes keep diagnostics on stderr and exit non-zero on scan errors. They
+  cannot be combined with each other, `--debug`, or `--multiplex`.
+
 ## [0.3.0] - 2026-09-01
 
 ### Added

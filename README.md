@@ -29,6 +29,52 @@ drs [ <directories...> ]
 If one/more directories are specified as `<directories>`, then this will override the
 `scandirs.include` from your config file.
 
+## Script output
+
+For scripts and status bars, `drs` can print its result without starting the UI.
+
+Print one dirty repository per line, sorted, using absolute paths:
+
+```bash
+drs --list
+```
+
+The command exits 0 even when no repository is dirty, in which case stdout is
+empty.
+
+Print the same repositories as a JSON array:
+
+```bash
+drs --json
+```
+
+Example:
+
+```json
+[
+  {
+    "path": "/home/user/src/project",
+    "vcs": "git",
+    "status": {
+      "staged": 1,
+      "unstaged": 2,
+      "untracked": 0
+    }
+  }
+]
+```
+
+`path` is the absolute repository path, `vcs` is `git` or `jj`, and the counts
+are derived from the git status entries. A file that is both staged and modified
+counts in both `staged` and `unstaged`.
+
+In both modes stdout contains only the payload. Diagnostics, including walk
+errors, go to stderr. Walk errors do not change the exit status; a repository
+whose status cannot be read makes the command exit non-zero without writing a
+partial payload. The modes cannot be combined with each other, `--debug`, or
+`--multiplex`. `--debug` is intended for development and is not a stable
+contract.
+
 ![demo](demo.gif)
 
 ## UI

@@ -2,12 +2,12 @@ package scanner
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
-//	"fmt"
-	"strings"
-	"path/filepath"
 	"path"
+	"path/filepath"
+	"strings"
 
 	"github.com/karrick/godirwalk"
 	"golang.org/x/sync/errgroup"
@@ -17,13 +17,13 @@ func skip(needle string, haystack []string) bool {
 	for _, f := range haystack {
 		//fmt.Println( f)
 		//FULL PATH COMPARISON
-		if(f[0:1]=="/"){
+		if f[0:1] == "/" {
 			if f == needle {
 				return true
 			}
 
-		//PARTIAL PATH COMPARISON
-		} else{
+			//PARTIAL PATH COMPARISON
+		} else {
 			if f == path.Base(needle) {
 				//fmt.Println( needle)
 				return true
@@ -105,22 +105,26 @@ func Walk(ctx context.Context, config *Config, results chan string, ignore_dir_e
 		j := i // copy loop variable
 		globPath := config.ScanDirs.Include[j]
 
-		if(string(globPath[len(globPath)-1:]) == "*"){
+		if string(globPath[len(globPath)-1:]) == "*" {
 			//log.Printf("GLOBPATH: %s", globPath)
 			parent := filepath.Dir(globPath)
 			//log.Printf("PARENT: %s", parent)
 			//log.Printf("BASEGLOB: %s", path.Base(globPath))
 			//log.Printf("BASEGLOB2: %s", path.Base(globPath[0:len(globPath)-1]))
-			baseGlob := path.Base(globPath[0:len(globPath)-1])
+			baseGlob := path.Base(globPath[0 : len(globPath)-1])
 
 			entries, err := os.ReadDir(parent)
 			if err != nil {
-				log.Fatal(err)
+				if ignore_dir_errors {
+					log.Printf("ERROR: %s: %v", globPath, err)
+					continue
+				}
+				return fmt.Errorf("read glob parent %s: %w", parent, err)
 			}
 
 			for _, e := range entries {
 				if strings.HasPrefix(e.Name(), baseGlob) {
-					completeIncludeList = append(completeIncludeList, parent + "/" + e.Name())
+					completeIncludeList = append(completeIncludeList, parent+"/"+e.Name())
 					//fmt.Println(e.Name())
 				}
 			}

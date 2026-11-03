@@ -1,6 +1,10 @@
 package scanner
 
-import "testing"
+import (
+	"context"
+	"path/filepath"
+	"testing"
+)
 
 func TestSkip(t *testing.T) {
 	tests := []struct {
@@ -37,4 +41,23 @@ func TestSkip(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWalkMissingGlobParent(t *testing.T) {
+	config := &Config{}
+	config.ScanDirs.Include = []string{filepath.Join(t.TempDir(), "missing", "*")}
+
+	t.Run("ignored", func(t *testing.T) {
+		err := Walk(context.Background(), config, make(chan string, 1), true)
+		if err != nil {
+			t.Errorf("Walk = %v, want nil when errors are ignored", err)
+		}
+	})
+
+	t.Run("returned", func(t *testing.T) {
+		err := Walk(context.Background(), config, make(chan string, 1), false)
+		if err == nil {
+			t.Error("Walk = nil, want error for missing glob parent")
+		}
+	})
 }
